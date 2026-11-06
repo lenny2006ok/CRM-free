@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Cliente;
-use App\Models\Plano;
-use App\Models\Pagamento;
 use App\Models\CompanyDetail;
+use App\Models\Pagamento;
+use App\Models\Plano;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +31,45 @@ class GestorCrmTest extends TestCase
 
         $response->assertRedirect('/dashboard');
         $this->assertAuthenticated();
+    }
+
+    public function test_dashboard_exibe_metricas_consolidadas_de_clientes()
+    {
+        $revenda = User::where('whatsapp', '5511988888888')->first();
+        $plano = Plano::where('user_id', $revenda->id)->first();
+        $hoje = Carbon::today();
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Ativo',
+            'whatsapp' => '5511981111111',
+            'vencimento' => $hoje->copy()->addDays(5),
+            'plano_id' => $plano->id,
+        ]);
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencido',
+            'whatsapp' => '5511982222222',
+            'vencimento' => $hoje->copy()->subDays(2),
+            'plano_id' => $plano->id,
+        ]);
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencendo Hoje',
+            'whatsapp' => '5511983333333',
+            'vencimento' => $hoje,
+            'plano_id' => $plano->id,
+        ]);
+
+        $this->actingAs($revenda);
+        $response = $this->get('/dashboard');
+        $response->assertStatus(200);
+        $response->assertViewHas('totalClientes', 3);
+        $response->assertViewHas('clientesAtivos', 2);
+        $response->assertViewHas('clientesVencidos', 1);
+        $response->assertViewHas('vencendoHoje', 1);
     }
 
     public function test_registro_de_nova_revenda()
