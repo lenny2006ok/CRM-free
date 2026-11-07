@@ -30,16 +30,22 @@ class VerificarVencimentos extends Command
             ->where('notificacoes', true)
             ->where(function ($q) use ($tresDiasFrente, $hojeStr, $umDiaAtras) {
                 $q->whereDate('vencimento', $tresDiasFrente)
-                  ->orWhereDate('vencimento', $hojeStr)
-                  ->orWhereDate('vencimento', $umDiaAtras);
+                    ->orWhereDate('vencimento', $hojeStr)
+                    ->orWhereDate('vencimento', $umDiaAtras);
             })
             ->get();
 
         $this->info("Encontrados {$clientes->count()} cliente(s) elegíveis para notificação de vencimento.");
 
+        // Bolt optimization: Cache notification templates in memory per reseller and finality.
+        // This avoids N+1 database queries when processing large batches of expiring subscriptions,
+        // reducing query complexity from O(N) where N = eligible clients to at most O(R x F)
+        // where R = unique resellers and F = notification categories (3).
+        $templateCache = [];
+
         foreach ($clientes as $cliente) {
             $revendedor = $cliente->user;
-            if (!$revendedor) {
+            if (! $revendedor) {
                 continue;
             }
 
@@ -51,17 +57,22 @@ class VerificarVencimentos extends Command
                 default => null,
             };
 
-            if (!$finalidade) {
+            if (! $finalidade) {
                 continue;
             }
 
-            $template = Template::withoutGlobalScopes()
-                ->where('user_id', $revendedor->id)
-                ->where('finalidade', $finalidade)
-                ->first();
+            if (! array_key_exists($revendedor->id, $templateCache) || ! array_key_exists($finalidade, $templateCache[$revendedor->id])) {
+                $templateCache[$revendedor->id][$finalidade] = Template::withoutGlobalScopes()
+                    ->where('user_id', $revendedor->id)
+                    ->where('finalidade', $finalidade)
+                    ->first();
+            }
 
-            if (!$template) {
+            $template = $templateCache[$revendedor->id][$finalidade];
+
+            if (! $template) {
                 $this->warn("Revendedor #{$revendedor->id} não possui template configurado para '{$finalidade}'.");
+
                 continue;
             }
 
@@ -70,7 +81,7 @@ class VerificarVencimentos extends Command
                 $pagamento = MercadoPagoService::criarPix($cliente, $cliente->plano, $revendedor);
             }
 
-            $linkPix = $pagamento ? ($pagamento->ticket_url ?: url('/pagamento/' . $pagamento->mercado_pago_id)) : ($revendedor->companyDetail?->pix_manual ?: 'Chave não cadastrada');
+            $linkPix = $pagamento ? ($pagamento->ticket_url ?: url('/pagamento/'.$pagamento->mercado_pago_id)) : ($revendedor->companyDetail?->pix_manual ?: 'Chave não cadastrada');
             $pixCopiaCola = $pagamento ? ($pagamento->qr_code ?: '') : ($revendedor->companyDetail?->pix_manual ?: '');
 
             $variaveis = [
@@ -96,7 +107,8 @@ class VerificarVencimentos extends Command
             Log::info("Notificação [{$finalidade}] enviada para o cliente #{$cliente->id}");
         }
 
-        $this->info("Rotina de vencimentos concluída com sucesso!");
+        $this->info('Rotina de vencimentos concluída com sucesso!');
+
         return Command::SUCCESS;
     }
 }
