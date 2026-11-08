@@ -4,10 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Cliente;
 use App\Models\Pagamento;
-use App\Models\Plano;
-use App\Models\Conexao;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
@@ -20,12 +17,24 @@ class DashboardController extends Controller
             return redirect()->route('cliente.portal');
         }
 
-        $hoje = Carbon::today();
+        $hoje = Carbon::today()->toDateString();
 
-        $totalClientes = Cliente::count();
-        $clientesAtivos = Cliente::where('vencimento', '>=', $hoje)->count();
-        $clientesVencidos = Cliente::where('vencimento', '<', $hoje)->count();
-        $vencendoHoje = Cliente::where('vencimento', $hoje)->count();
+        // ⚡ Bolt Optimization: Consolidate 4 separate COUNT(*) queries into 1 conditional aggregation query.
+        // Uses toBase() to avoid Eloquent model hydration overhead for aggregation stats.
+        // date(vencimento) ensures clean calendar date comparison across database drivers.
+        $clienteStats = Cliente::toBase()
+            ->selectRaw('
+                COUNT(*) as total,
+                COUNT(CASE WHEN date(vencimento) >= ? THEN 1 END) as ativos,
+                COUNT(CASE WHEN date(vencimento) < ? THEN 1 END) as vencidos,
+                COUNT(CASE WHEN date(vencimento) = ? THEN 1 END) as vencendo_hoje
+            ', [$hoje, $hoje, $hoje])
+            ->first();
+
+        $totalClientes = (int) ($clienteStats->total ?? 0);
+        $clientesAtivos = (int) ($clienteStats->ativos ?? 0);
+        $clientesVencidos = (int) ($clienteStats->vencidos ?? 0);
+        $vencendoHoje = (int) ($clienteStats->vencendo_hoje ?? 0);
 
         $receitaPrevista = Cliente::join('planos', 'clientes.plano_id', '=', 'planos.id')
             ->sum('planos.preco');
@@ -45,8 +54,6 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
-        $conexao = Conexao::first();
-
         return view('dashboard.index', compact(
             'totalClientes',
             'clientesAtivos',
@@ -55,8 +62,7 @@ class DashboardController extends Controller
             'receitaPrevista',
             'receitaMes',
             'ultimosClientes',
-            'ultimosPagamentos',
-            'conexao'
+            'ultimosPagamentos'
         ));
     }
 }
