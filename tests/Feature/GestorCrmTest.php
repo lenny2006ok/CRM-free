@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Cliente;
-use App\Models\Plano;
-use App\Models\Pagamento;
 use App\Models\CompanyDetail;
+use App\Models\Pagamento;
+use App\Models\Plano;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -193,5 +193,39 @@ class GestorCrmTest extends TestCase
 
         $rawToken = DB::table('company_details')->where('id', $company->id)->value('access_token');
         $this->assertNotEquals($secretToken, $rawToken);
+    }
+
+    public function test_dashboard_metricas_e_renderizacao()
+    {
+        $revenda = User::where('whatsapp', '5511988888888')->first();
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Ativo',
+            'whatsapp' => '5511980000001',
+            'vencimento' => Carbon::today()->addDays(10),
+        ]);
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencendo Hoje',
+            'whatsapp' => '5511980000002',
+            'vencimento' => Carbon::today(),
+        ]);
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencido',
+            'whatsapp' => '5511980000003',
+            'vencimento' => Carbon::today()->subDays(5),
+        ]);
+
+        $response = $this->actingAs($revenda)->get('/dashboard');
+
+        $response->assertStatus(200);
+        $response->assertViewHas('totalClientes', 3);
+        $response->assertViewHas('clientesAtivos', 2); // vencimento >= hoje (10 dias + hoje)
+        $response->assertViewHas('clientesVencidos', 1);
+        $response->assertViewHas('vencendoHoje', 1);
     }
 }
