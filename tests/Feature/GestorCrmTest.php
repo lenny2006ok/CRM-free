@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Cliente;
-use App\Models\Plano;
-use App\Models\Pagamento;
 use App\Models\CompanyDetail;
+use App\Models\Pagamento;
+use App\Models\Plano;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -150,6 +150,35 @@ class GestorCrmTest extends TestCase
             'cliente_id' => $clienteVenceHoje->id,
             'status' => 'pending',
         ]);
+    }
+
+    public function test_cron_verificar_vencimentos_elimina_n_plus_one_queries_de_templates()
+    {
+        $revenda = User::where('whatsapp', '5511988888888')->first();
+
+        // Create 10 clients due today without plans to isolate template query count
+        for ($i = 0; $i < 10; $i++) {
+            Cliente::create([
+                'user_id' => $revenda->id,
+                'nome' => "Cliente N1 Teste {$i}",
+                'whatsapp' => "551198888000{$i}",
+                'vencimento' => Carbon::today()->format('Y-m-d'),
+                'notificacoes' => true,
+            ]);
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->artisan('cron:verificar-vencimentos')->assertExitCode(0);
+
+        $queries = DB::getQueryLog();
+        $templateQueries = array_filter($queries, function ($q) {
+            return str_contains($q['query'], 'templates');
+        });
+
+        // With N+1, there would be 10 individual template queries. With batch lookup, exactly 1 query.
+        $this->assertCount(1, $templateQueries);
     }
 
     public function test_portal_do_cliente_consulta_e_geracao_de_pix()
