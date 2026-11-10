@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Cliente;
-use App\Models\Plano;
-use App\Models\Pagamento;
 use App\Models\CompanyDetail;
+use App\Models\Pagamento;
+use App\Models\Plano;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -193,5 +193,42 @@ class GestorCrmTest extends TestCase
 
         $rawToken = DB::table('company_details')->where('id', $company->id)->value('access_token');
         $this->assertNotEquals($secretToken, $rawToken);
+    }
+
+    public function test_dashboard_agrega_metricas_de_clientes_corretamente()
+    {
+        $revenda = User::where('whatsapp', '5511988888888')->first();
+        $hoje = Carbon::today();
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Ativo Futuro',
+            'whatsapp' => '5511900000001',
+            'vencimento' => $hoje->copy()->addDays(5)->toDateString(),
+        ]);
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencendo Hoje',
+            'whatsapp' => '5511900000002',
+            'vencimento' => $hoje->copy()->toDateString(),
+        ]);
+
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Ja Vencido',
+            'whatsapp' => '5511900000003',
+            'vencimento' => $hoje->copy()->subDays(2)->toDateString(),
+        ]);
+
+        $this->actingAs($revenda);
+
+        $response = $this->get('/dashboard');
+        $response->assertStatus(200);
+
+        $response->assertViewHas('totalClientes', 3);
+        $response->assertViewHas('clientesAtivos', 2);
+        $response->assertViewHas('clientesVencidos', 1);
+        $response->assertViewHas('vencendoHoje', 1);
     }
 }
