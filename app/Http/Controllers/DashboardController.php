@@ -3,11 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Cliente;
-use App\Models\Pagamento;
-use App\Models\Plano;
 use App\Models\Conexao;
+use App\Models\Pagamento;
 use Carbon\Carbon;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
@@ -20,12 +18,24 @@ class DashboardController extends Controller
             return redirect()->route('cliente.portal');
         }
 
-        $hoje = Carbon::today();
+        $hoje = Carbon::today()->toDateString();
 
-        $totalClientes = Cliente::count();
-        $clientesAtivos = Cliente::where('vencimento', '>=', $hoje)->count();
-        $clientesVencidos = Cliente::where('vencimento', '<', $hoje)->count();
-        $vencendoHoje = Cliente::where('vencimento', $hoje)->count();
+        // ⚡ Performance optimization: Consolidate 4 separate COUNT queries on `clientes` into 1 single
+        // conditional aggregation query. Reduces database roundtrips and table scans by 75%.
+        // Use date(vencimento) to handle both DATE strings and DATETIME representations uniformly across drivers.
+        $clienteStats = Cliente::toBase()
+            ->selectRaw('
+                COUNT(*) as total,
+                SUM(CASE WHEN date(vencimento) >= ? THEN 1 ELSE 0 END) as ativos,
+                SUM(CASE WHEN date(vencimento) < ? THEN 1 ELSE 0 END) as vencidos,
+                SUM(CASE WHEN date(vencimento) = ? THEN 1 ELSE 0 END) as hoje
+            ', [$hoje, $hoje, $hoje])
+            ->first();
+
+        $totalClientes = (int) ($clienteStats->total ?? 0);
+        $clientesAtivos = (int) ($clienteStats->ativos ?? 0);
+        $clientesVencidos = (int) ($clienteStats->vencidos ?? 0);
+        $vencendoHoje = (int) ($clienteStats->hoje ?? 0);
 
         $receitaPrevista = Cliente::join('planos', 'clientes.plano_id', '=', 'planos.id')
             ->sum('planos.preco');
