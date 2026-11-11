@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use App\Models\Cliente;
-use App\Models\Plano;
-use App\Models\Pagamento;
 use App\Models\CompanyDetail;
+use App\Models\Pagamento;
+use App\Models\Plano;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -193,5 +193,56 @@ class GestorCrmTest extends TestCase
 
         $rawToken = DB::table('company_details')->where('id', $company->id)->value('access_token');
         $this->assertNotEquals($secretToken, $rawToken);
+    }
+
+    public function test_dashboard_metricas_com_agregacao_condicional()
+    {
+        $revenda = User::where('whatsapp', '5511988888888')->first();
+        $hoje = Carbon::today();
+
+        // Cria 1 cliente ativo no futuro
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Ativo',
+            'whatsapp' => '5511999991111',
+            'vencimento' => $hoje->copy()->addDays(10),
+        ]);
+
+        // Cria 1 cliente que vence hoje (ativo e vencendo hoje)
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencendo Hoje',
+            'whatsapp' => '5511999992222',
+            'vencimento' => $hoje->copy(),
+        ]);
+
+        // Cria 1 cliente vencido
+        Cliente::create([
+            'user_id' => $revenda->id,
+            'nome' => 'Cliente Vencido',
+            'whatsapp' => '5511999993333',
+            'vencimento' => $hoje->copy()->subDays(5),
+        ]);
+
+        $this->actingAs($revenda);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $response = $this->get('/dashboard');
+
+        $response->assertStatus(200);
+        $response->assertViewHas('totalClientes', 3);
+        $response->assertViewHas('clientesAtivos', 2);
+        $response->assertViewHas('clientesVencidos', 1);
+        $response->assertViewHas('vencendoHoje', 1);
+
+        // Verifica que as 4 contagens são consolidadas em 1 query com SUM(CASE WHEN ...)
+        $queries = DB::getQueryLog();
+        $aggregationQueries = array_filter($queries, function ($q) {
+            return str_contains($q['query'], 'CASE WHEN');
+        });
+
+        $this->assertCount(1, $aggregationQueries);
     }
 }
