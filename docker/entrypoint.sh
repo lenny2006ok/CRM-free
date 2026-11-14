@@ -64,6 +64,8 @@ fi
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     echo "==> Executando migrações do banco de dados..."
     php artisan migrate --force || echo "==> Aviso: As migrações falharam ou o banco ainda não está acessível."
+    echo "==> Semeando roles e contas padrão (Admin e Revenda)..."
+    php artisan db:seed --force || echo "==> Aviso: Falha ao semear banco de dados."
 fi
 
 # Reajusta permissões de todos os diretórios graváveis para o usuário www-data
