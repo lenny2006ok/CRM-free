@@ -84,12 +84,15 @@ COPY . .
 # Copia os assets compilados pelo Vite do primeiro estágio
 COPY --from=frontend /app/public/build ./public/build
 
+# Garante que o arquivo .env base exista a partir de .env.example
+RUN cp .env.example .env && chown www-data:www-data .env && chmod 664 .env
+
 # Gera o autoloader otimizado de produção
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
 # Ajusta permissões dos diretórios de armazenamento e cache
 RUN mkdir -p storage/framework/{sessions,views,cache/data} storage/logs bootstrap/cache \
-    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/.env \
     && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Porta padrão de escuta (sobrescrita em runtime pela variável PORT do Render)
