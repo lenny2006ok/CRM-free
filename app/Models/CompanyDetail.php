@@ -26,6 +26,7 @@ class CompanyDetail extends Model
             'access_token' => 'encrypted',
             'public_key' => 'encrypted',
             'evolution_api_key' => 'encrypted',
+            'qpanel_api_key' => 'encrypted',
         ];
     }
 

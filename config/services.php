@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    'mercadopago' => [
+        'access_token' => env('MERCADO_PAGO_ACCESS_TOKEN'),
+        'public_key' => env('MERCADO_PAGO_PUBLIC_KEY'),
+        'webhook_secret' => env('MERCADO_PAGO_WEBHOOK_SECRET'),
+    ],
+
+    'evolution' => [
+        'url' => env('EVOLUTION_API_URL', 'http://localhost:8080'),
+        'api_key' => env('EVOLUTION_API_KEY'),
+        'webhook_token' => env('EVOLUTION_WEBHOOK_TOKEN'),
+    ],
+
 ];

@@ -36,7 +36,7 @@
                 </div>
 
                 <div class="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
-                    <button @click="planoEdit = {{ json_encode($plano) }}; openModal = true" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
+                    <button @click="planoEdit = @js($plano); openModal = true" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
                         ✏️ Editar
                     </button>
 

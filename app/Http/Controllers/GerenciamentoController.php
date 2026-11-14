@@ -23,6 +23,8 @@ class GerenciamentoController extends Controller
 
     public function salvarPlano(Request $request)
     {
+        $user = Auth::user();
+
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
             'preco' => 'required|numeric|min:0',
@@ -30,13 +32,18 @@ class GerenciamentoController extends Controller
             'id_qpanel' => 'nullable|string',
         ]);
 
-        $validated['user_id'] = Auth::id();
-
         if ($request->filled('id')) {
             $plano = Plano::findOrFail($request->id);
+
+            // Blindagem IDOR: somente o proprietário ou admin pode alterar o plano
+            if ($plano->user_id !== $user->id && !in_array((int) $user->role_id, [1, 2])) {
+                abort(403, 'Você não tem permissão para alterar este plano.');
+            }
+
             $plano->update($validated);
             $msg = 'Plano atualizado com sucesso!';
         } else {
+            $validated['user_id'] = $user->id;
             Plano::create($validated);
             $msg = 'Plano cadastrado com sucesso!';
         }
@@ -46,6 +53,12 @@ class GerenciamentoController extends Controller
 
     public function deletarPlano(Plano $plano)
     {
+        $user = Auth::user();
+
+        if ($plano->user_id !== $user->id && !in_array((int) $user->role_id, [1, 2])) {
+            abort(403, 'Você não tem permissão para excluir este plano.');
+        }
+
         $plano->delete();
         return redirect()->route('planos.index')->with('success', 'Plano removido com sucesso!');
     }
@@ -58,17 +71,23 @@ class GerenciamentoController extends Controller
 
     public function salvarServidor(Request $request)
     {
+        $user = Auth::user();
+
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
         ]);
 
-        $validated['user_id'] = Auth::id();
-
         if ($request->filled('id')) {
             $servidor = Servidor::findOrFail($request->id);
+
+            if ($servidor->user_id !== $user->id && !in_array((int) $user->role_id, [1, 2])) {
+                abort(403, 'Você não tem permissão para alterar este servidor.');
+            }
+
             $servidor->update($validated);
             $msg = 'Servidor atualizado!';
         } else {
+            $validated['user_id'] = $user->id;
             Servidor::create($validated);
             $msg = 'Servidor cadastrado com sucesso!';
         }
@@ -78,6 +97,12 @@ class GerenciamentoController extends Controller
 
     public function deletarServidor(Servidor $servidor)
     {
+        $user = Auth::user();
+
+        if ($servidor->user_id !== $user->id && !in_array((int) $user->role_id, [1, 2])) {
+            abort(403, 'Você não tem permissão para excluir este servidor.');
+        }
+
         $servidor->delete();
         return redirect()->route('servidores.index')->with('success', 'Servidor removido!');
     }
@@ -90,6 +115,8 @@ class GerenciamentoController extends Controller
 
     public function salvarTemplate(Request $request)
     {
+        $user = Auth::user();
+
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
             'finalidade' => 'required|string',
@@ -98,13 +125,17 @@ class GerenciamentoController extends Controller
             'imagem' => 'nullable|string',
         ]);
 
-        $validated['user_id'] = Auth::id();
-
         if ($request->filled('id')) {
             $template = Template::findOrFail($request->id);
+
+            if ($template->user_id !== $user->id && !in_array((int) $user->role_id, [1, 2])) {
+                abort(403, 'Você não tem permissão para alterar este template.');
+            }
+
             $template->update($validated);
             $msg = 'Template atualizado!';
         } else {
+            $validated['user_id'] = $user->id;
             Template::create($validated);
             $msg = 'Template criado com sucesso!';
         }
@@ -114,6 +145,12 @@ class GerenciamentoController extends Controller
 
     public function deletarTemplate(Template $template)
     {
+        $user = Auth::user();
+
+        if ($template->user_id !== $user->id && !in_array((int) $user->role_id, [1, 2])) {
+            abort(403, 'Você não tem permissão para excluir este template.');
+        }
+
         $template->delete();
         return redirect()->route('templates.index')->with('success', 'Template removido com sucesso!');
     }
@@ -121,7 +158,7 @@ class GerenciamentoController extends Controller
     public function conexaoWhatsapp()
     {
         $user = Auth::user();
-        $conexao = Conexao::first();
+        $conexao = Conexao::where('user_id', $user->id)->first();
         $company = $user->companyDetail;
 
         return view('whatsapp.index', compact('conexao', 'company'));
@@ -155,7 +192,7 @@ class GerenciamentoController extends Controller
     public function desconectarWhatsapp()
     {
         $user = Auth::user();
-        $conexao = Conexao::first();
+        $conexao = Conexao::where('user_id', $user->id)->first();
         if ($conexao) {
             $conexao->status = 'disconnected';
             $conexao->conn = false;

@@ -11,6 +11,7 @@ use App\Http\Controllers\WebhookController;
 /*
 |--------------------------------------------------------------------------
 | Webhook Routes (Mercado Pago e WhatsApp Evolution API)
+| Isentos de CSRF via bootstrap/app.php
 |--------------------------------------------------------------------------
 */
 Route::post('/webhook/mercadopago', [WebhookController::class, 'mercadoPago'])->name('webhook.mercadopago');
@@ -18,28 +19,33 @@ Route::post('/webhook/evolution', [WebhookController::class, 'evolution'])->name
 
 /*
 |--------------------------------------------------------------------------
-| Central do Cliente (Pública / Portal do Assinante)
+| Central do Cliente (Pública / Portal do Assinante com Rate Limiting)
 |--------------------------------------------------------------------------
 */
 Route::get('/', function () {
     return redirect()->route('login');
 });
 
-Route::get('/portal', [ClientePortalController::class, 'portal'])->name('cliente.portal');
-Route::post('/portal/pix/{id}', [ClientePortalController::class, 'gerarPix'])->name('cliente.gerar-pix');
-Route::get('/pagamento/{id}', [ClientePortalController::class, 'visualizacaoPagamento'])->name('cliente.pagamento');
-Route::get('/pagamento/{id}/status', [ClientePortalController::class, 'checarStatus'])->name('cliente.pagamento.status');
+Route::middleware(['throttle:30,1'])->group(function () {
+    Route::get('/portal', [ClientePortalController::class, 'portal'])->name('cliente.portal');
+    Route::get('/pagamento/{id}', [ClientePortalController::class, 'visualizacaoPagamento'])->name('cliente.pagamento');
+    Route::get('/pagamento/{id}/status', [ClientePortalController::class, 'checarStatus'])->name('cliente.pagamento.status');
+});
+
+Route::post('/portal/pix/{id}', [ClientePortalController::class, 'gerarPix'])
+    ->middleware(['throttle:10,1'])
+    ->name('cliente.gerar-pix');
 
 /*
 |--------------------------------------------------------------------------
-| Autenticação (Login, Registro e Logout)
+| Autenticação (Login, Registro e Logout com proteção contra Brute-Force)
 |--------------------------------------------------------------------------
 */
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
     Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
 });
 
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout')->middleware('auth');

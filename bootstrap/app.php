@@ -12,10 +12,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Isenta webhooks externos (Mercado Pago e Evolution API) da validação de CSRF
+        $middleware->validateCsrfTokens(except: [
+            'webhook/*',
+        ]);
+
+        // Confia em proxies reversos (como o do Render.com) para terminação segura de SSL/HTTPS
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
+            fn (Request $request) => $request->is('api/*') || $request->is('webhook/*') || $request->expectsJson(),
         );
     })->create();

@@ -55,13 +55,18 @@ class VerificarVencimentos extends Command
                 continue;
             }
 
+            // Busca o template customizado do revendedor ou o template padrão do sistema
             $template = Template::withoutGlobalScopes()
-                ->where('user_id', $revendedor->id)
+                ->where(function ($q) use ($revendedor) {
+                    $q->where('user_id', $revendedor->id)
+                      ->orWhereNull('user_id');
+                })
                 ->where('finalidade', $finalidade)
+                ->orderByRaw('user_id IS NULL ASC')
                 ->first();
 
             if (!$template) {
-                $this->warn("Revendedor #{$revendedor->id} não possui template configurado para '{$finalidade}'.");
+                $this->warn("Nenhum template encontrado para '{$finalidade}' (nem customizado nem global).");
                 continue;
             }
 

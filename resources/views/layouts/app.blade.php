@@ -3,9 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Gestor IPTV / Assinaturas')</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        if (window.axios) {
+            window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (token) {
+                window.axios.defaults.headers.common['X-CSRF-TOKEN'] = token;
+            }
+        }
+    </script>
 </head>
 <body class="h-full antialiased font-sans flex flex-col md:flex-row bg-slate-950">
 
@@ -99,6 +110,5 @@
 
         @yield('content')
     </main>
-
 </body>
 </html>

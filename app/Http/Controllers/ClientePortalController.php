@@ -15,11 +15,18 @@ class ClientePortalController extends Controller
         $pagamentoPendente = null;
 
         if ($request->filled('whatsapp')) {
-            $whats = preg_replace('/\D/', '', $request->whatsapp);
-            $cliente = Cliente::withoutGlobalScopes()
-                ->where('whatsapp', 'like', "%{$whats}%")
-                ->with(['plano', 'servidor', 'user.companyDetail'])
-                ->first();
+            $whats = preg_replace('/\D/', '', (string) $request->whatsapp);
+
+            // Blindagem: exige no mínimo 8 dígitos para evitar vazamento em massa de dados via busca ampla
+            if (strlen($whats) >= 8) {
+                $cliente = Cliente::withoutGlobalScopes()
+                    ->where(function ($q) use ($whats) {
+                        $q->where('whatsapp', $whats)
+                          ->orWhere('whatsapp', 'like', '%' . substr($whats, -8));
+                    })
+                    ->with(['plano', 'servidor', 'user.companyDetail'])
+                    ->first();
+            }
         }
 
         if ($cliente) {
@@ -39,6 +46,18 @@ class ClientePortalController extends Controller
 
         if (!$cliente->plano) {
             return back()->with('error', 'Nenhum plano associado a esta assinatura. Contate o suporte.');
+        }
+
+        // Reutiliza cobrança Pix pendente gerada nos últimos 15 minutos para evitar flood no gateway
+        $pagamentoRecente = Pagamento::withoutGlobalScopes()
+            ->where('cliente_id', $cliente->id)
+            ->where('status', 'pending')
+            ->where('created_at', '>=', now()->subMinutes(15))
+            ->latest()
+            ->first();
+
+        if ($pagamentoRecente && !empty($pagamentoRecente->qr_code)) {
+            return redirect()->route('cliente.pagamento', ['id' => $pagamentoRecente->mercado_pago_id]);
         }
 
         $pagamento = MercadoPagoService::criarPix($cliente, $cliente->plano, $cliente->user);

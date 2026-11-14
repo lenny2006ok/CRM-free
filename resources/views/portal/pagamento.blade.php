@@ -11,7 +11,7 @@
     copiado: false,
     status: '{{ $pagamento->status }}',
     copiarPix() {
-        navigator.clipboard.writeText('{{ $pagamento->qr_code }}');
+        navigator.clipboard.writeText(@js($pagamento->qr_code));
         this.copiado = true;
         setTimeout(() => this.copiado = false, 3000);
     },

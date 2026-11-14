@@ -19,7 +19,10 @@ class ClienteController extends Controller
         $query = Cliente::with('plano', 'servidor');
 
         if ($request->filled('busca')) {
-            $busca = $request->input('busca');
+            $rawBusca = $request->input('busca');
+            // Escapa caracteres coringa do LIKE (% e _) para prevenir LIKE injection
+            $busca = addcslashes($rawBusca, '%_\\');
+
             $query->where(function ($q) use ($busca) {
                 $q->where('nome', 'like', "%{$busca}%")
                   ->orWhere('whatsapp', 'like', "%{$busca}%")
@@ -52,12 +55,14 @@ class ClienteController extends Controller
 
     public function store(Request $request)
     {
+        $user = Auth::user();
+
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
             'whatsapp' => 'required|string|max:30',
             'vencimento' => 'required|date',
-            'plano_id' => 'nullable|exists:planos,id',
-            'servidor_id' => 'nullable|exists:servidores,id',
+            'plano_id' => 'nullable|integer',
+            'servidor_id' => 'nullable|integer',
             'numero_de_telas' => 'integer|min:1',
             'iptv_nome' => 'nullable|string|max:255',
             'iptv_senha' => 'nullable|string|max:255',
@@ -66,7 +71,20 @@ class ClienteController extends Controller
             'notas' => 'nullable|string',
         ]);
 
-        $user = Auth::user();
+        // Validação de isolamento de tenant (impede IDOR ao vincular plano ou servidor de outro revendedor)
+        if (!empty($validated['plano_id'])) {
+            $planoValido = Plano::where('id', $validated['plano_id'])->exists();
+            if (!$planoValido) {
+                return back()->withErrors(['plano_id' => 'O plano selecionado não é válido para sua conta.'])->withInput();
+            }
+        }
+
+        if (!empty($validated['servidor_id'])) {
+            $servidorValido = Servidor::where('id', $validated['servidor_id'])->exists();
+            if (!$servidorValido) {
+                return back()->withErrors(['servidor_id' => 'O servidor selecionado não é válido para sua conta.'])->withInput();
+            }
+        }
 
         if ($user->clientes()->count() >= $user->limite) {
             return back()->with('error', "Limite de {$user->limite} clientes atingido. Atualize seu plano de revenda.");
@@ -79,7 +97,15 @@ class ClienteController extends Controller
         $cliente = Cliente::create($validated);
 
         if ($request->filled('enviar_boas_vindas')) {
-            $template = Template::where('finalidade', 'boas_vindas')->first();
+            $template = Template::withoutGlobalScopes()
+                ->where(function ($q) use ($user) {
+                    $q->where('user_id', $user->id)
+                      ->orWhereNull('user_id');
+                })
+                ->where('finalidade', 'boas_vindas')
+                ->orderByRaw('user_id IS NULL ASC')
+                ->first();
+
             if ($template) {
                 $msg = $template->renderizar([
                     'nome' => $cliente->nome,
@@ -107,8 +133,8 @@ class ClienteController extends Controller
             'nome' => 'required|string|max:255',
             'whatsapp' => 'required|string|max:30',
             'vencimento' => 'required|date',
-            'plano_id' => 'nullable|exists:planos,id',
-            'servidor_id' => 'nullable|exists:servidores,id',
+            'plano_id' => 'nullable|integer',
+            'servidor_id' => 'nullable|integer',
             'numero_de_telas' => 'integer|min:1',
             'iptv_nome' => 'nullable|string|max:255',
             'iptv_senha' => 'nullable|string|max:255',
@@ -116,6 +142,20 @@ class ClienteController extends Controller
             'notificacoes' => 'boolean',
             'notas' => 'nullable|string',
         ]);
+
+        if (!empty($validated['plano_id'])) {
+            $planoValido = Plano::where('id', $validated['plano_id'])->exists();
+            if (!$planoValido) {
+                return back()->withErrors(['plano_id' => 'O plano selecionado não é válido para sua conta.'])->withInput();
+            }
+        }
+
+        if (!empty($validated['servidor_id'])) {
+            $servidorValido = Servidor::where('id', $validated['servidor_id'])->exists();
+            if (!$servidorValido) {
+                return back()->withErrors(['servidor_id' => 'O servidor selecionado não é válido para sua conta.'])->withInput();
+            }
+        }
 
         $validated['notificacoes'] = $request->has('notificacoes');
         $cliente->update($validated);

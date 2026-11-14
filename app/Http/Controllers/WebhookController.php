@@ -13,32 +13,72 @@ use Illuminate\Support\Facades\Log;
 
 class WebhookController extends Controller
 {
+    /**
+     * Webhook de Notificação de Pagamento do Mercado Pago.
+     * Processa notificações e consulta diretamente a API oficial do Mercado Pago para validação.
+     */
     public function mercadoPago(Request $request)
     {
         $xSignature = $request->header('x-signature', '');
         $xRequestId = $request->header('x-request-id', '');
         $dataId = (string) ($request->input('data.id') ?? $request->input('id') ?? '');
 
-        if (!empty($xSignature) && !MercadoPagoService::validarAssinatura($xSignature, $xRequestId, $dataId)) {
-            Log::warning('Webhook Mercado Pago rejeitado por assinatura inválida.');
-            return response()->json(['error' => 'Assinatura inválida'], 401);
+        // 1. Validação obrigatória de assinatura quando configurada
+        $webhookSecret = config('services.mercadopago.webhook_secret', env('MERCADO_PAGO_WEBHOOK_SECRET'));
+        if (!empty($webhookSecret)) {
+            if (empty($xSignature) || !MercadoPagoService::validarAssinatura($xSignature, $xRequestId, $dataId, $webhookSecret)) {
+                Log::warning('Webhook Mercado Pago rejeitado por assinatura inválida ou ausente.', [
+                    'ip' => $request->ip(),
+                    'data_id' => $dataId,
+                ]);
+                return response()->json(['error' => 'Assinatura inválida'], 401);
+            }
         }
 
         $type = $request->input('type') ?? $request->input('action');
 
         if ($type === 'payment' || $request->has('data.id') || $request->has('id')) {
             $paymentId = $dataId;
-            $pagamento = Pagamento::withoutGlobalScopes()->where('mercado_pago_id', $paymentId)->first();
-            $newStatus = $request->input('status') ?? $request->input('data.status');
 
-            if (!$newStatus && $pagamento && $pagamento->user) {
-                $consultado = MercadoPagoService::consultarPagamento($paymentId, $pagamento->user->companyDetail?->access_token);
-                if ($consultado) {
-                    $newStatus = $consultado['status'] ?? null;
+            if (empty($paymentId)) {
+                return response()->json(['error' => 'ID do pagamento não informado'], 400);
+            }
+
+            $pagamento = Pagamento::withoutGlobalScopes()->where('mercado_pago_id', $paymentId)->first();
+
+            if (!$pagamento) {
+                // Pagamento não pertence a este sistema ou já foi tratado
+                return response()->json(['status' => 'ignored', 'message' => 'Pagamento não localizado'], 200);
+            }
+
+            $newStatus = null;
+
+            // 2. SEGURANÇA CRÍTICA: NUNCA confiar no status enviado no corpo da requisição!
+            // Consulta a API oficial do Mercado Pago usando o token do revendedor ou da aplicação
+            if ($pagamento->user) {
+                $accessToken = $pagamento->user->companyDetail?->access_token;
+                $consultado = MercadoPagoService::consultarPagamento($paymentId, $accessToken);
+
+                if ($consultado && isset($consultado['status'])) {
+                    // Validação de integridade do valor pago para prevenir fraude de valor alterado
+                    $valorPago = (float) ($consultado['transaction_amount'] ?? 0);
+                    $valorEsperado = (float) $pagamento->valor;
+
+                    if ($consultado['status'] === 'approved' && $valorPago < $valorEsperado) {
+                        Log::error("Alerta de fraude no pagamento MP #{$paymentId}: valor pago (R$ {$valorPago}) inferior ao valor do plano (R$ {$valorEsperado}).");
+                        return response()->json(['error' => 'Valor divergente'], 400);
+                    }
+
+                    $newStatus = $consultado['status'];
                 }
             }
 
-            if ($pagamento && $newStatus) {
+            // Fallback exclusivo para testes locais mockados (MP_...)
+            if (!$newStatus && str_starts_with($paymentId, 'MP_') && app()->isLocal()) {
+                $newStatus = $request->input('status');
+            }
+
+            if ($newStatus) {
                 $statusAnterior = $pagamento->status;
                 $pagamento->status = $newStatus;
 
@@ -79,9 +119,18 @@ class WebhookController extends Controller
         Log::info("Cliente #{$cliente->id} ({$cliente->nome}) renovado até {$novaData->format('Y-m-d')}.");
 
         $revendedor = $cliente->user;
+        if (!$revendedor) {
+            return;
+        }
+
+        // Busca o template customizado do revendedor ou o template padrão do sistema
         $template = Template::withoutGlobalScopes()
-            ->where('user_id', $revendedor->id)
+            ->where(function ($q) use ($revendedor) {
+                $q->where('user_id', $revendedor->id)
+                  ->orWhereNull('user_id');
+            })
             ->where('finalidade', 'cobranca')
+            ->orderByRaw('user_id IS NULL ASC')
             ->first();
 
         if ($template && $cliente->notificacoes) {

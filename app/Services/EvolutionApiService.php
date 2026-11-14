@@ -107,15 +107,29 @@ class EvolutionApiService
         }
     }
 
+    protected static function resolveInstanceName(User $user, ?string $instanceName = null): string
+    {
+        if (!empty($instanceName)) {
+            return $instanceName;
+        }
+
+        $conexao = Conexao::where('user_id', $user->id)->first();
+        if ($conexao && !empty($conexao->instance_name)) {
+            return $conexao->instance_name;
+        }
+
+        return 'revenda_' . $user->id;
+    }
+
     public static function enviarTexto(User $user, string $numero, string $texto, ?string $instanceName = null): bool
     {
         $baseUrl = self::getBaseUrl($user);
         $apiKey = self::getApiKey($user);
-        $instance = $instanceName ?? ('user_' . $user->id);
+        $instance = self::resolveInstanceName($user, $instanceName);
         $numeroFormatado = self::formatNumber($numero);
 
         if (!$apiKey) {
-            Log::info("[MOCK WHATSAPP] Enviado para {$numeroFormatado}: {$texto}");
+            Log::info("[MOCK WHATSAPP] Enviado para {$numeroFormatado} via instância {$instance}: {$texto}");
             return true;
         }
 
@@ -141,11 +155,11 @@ class EvolutionApiService
     {
         $baseUrl = self::getBaseUrl($user);
         $apiKey = self::getApiKey($user);
-        $instance = $instanceName ?? ('user_' . $user->id);
+        $instance = self::resolveInstanceName($user, $instanceName);
         $numeroFormatado = self::formatNumber($numero);
 
         if (!$apiKey) {
-            Log::info("[MOCK WHATSAPP MEDIA] Enviado para {$numeroFormatado}: {$mediaUrl} - Legenda: {$caption}");
+            Log::info("[MOCK WHATSAPP MEDIA] Enviado para {$numeroFormatado} via instância {$instance}: {$mediaUrl} - Legenda: {$caption}");
             return true;
         }
 

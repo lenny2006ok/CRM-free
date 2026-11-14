@@ -50,7 +50,7 @@
                 </div>
 
                 <div class="mt-5 pt-4 border-t border-slate-800 flex items-center justify-between">
-                    <button @click="templateEdit = {{ json_encode($tmpl) }}; openModal = true" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
+                    <button @click="templateEdit = @js($tmpl); openModal = true" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">
                         ✏️ Editar Mensagem
                     </button>
 

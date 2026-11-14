@@ -23,7 +23,7 @@
                 </div>
 
                 <div class="flex items-center space-x-2">
-                    <button @click="servidorEdit = {{ json_encode($servidor) }}; openModal = true" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">
+                    <button @click="servidorEdit = @js($servidor); openModal = true" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">
                         ✏️
                     </button>
 
